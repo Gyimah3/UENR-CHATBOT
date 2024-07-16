@@ -22,6 +22,8 @@ locations = {
     "LT BLOCK": "https://maps.app.goo.gl/mNoeBD7Pjdbz2JYD9",
     "SAWMILL (LTS BLOCK)": "https://maps.app.goo.gl/TiSJmpEGnc5DRg737",
     "SYNDICATED HALL (SH)": "https://maps.app.goo.gl/aq66XMQnoRfUJpfe8",
+    "LTS BLOCK" :"https://maps.app.goo.gl/aq66XMQnoRfUJpfe8",
+    "SH": "https://maps.app.goo.gl/aq66XMQnoRfUJpfe8",
     "PAVILION": "https://maps.app.goo.gl/vVXLxgx36GMFbxjF9",
     "LIB FF": "https://maps.app.goo.gl/Xx6FJ5Vwzy47oVxE9",
     "APP LAB": "https://maps.app.goo.gl/MqmJnxgBgsiuKeM59",
@@ -85,22 +87,25 @@ def handle_message():
     return flask_response
 
 def get_gemini_response(message, conversation_history):
-    # Check for location or club queries first
+    # First, check for exact or partial location matches
     for loc_name, loc_link in locations.items():
-        if loc_name.lower() in message.lower():
+        if loc_name.lower() in message.lower() or any(word.lower() in message.lower() for word in loc_name.split()):
             return f"The location of {loc_name} can be found here: {loc_link}"
     
-    for club_name, club_info in clubs.items():
-        if club_name.lower() in message.lower():
-            return f"{club_info['description']} You can find more about them here: {club_info.get('x_handle', '')} {club_info.get('ig', '')} {club_info.get('fb', '')}"
-
-    # Prepare the conversation history
+    # If no match, prepare the conversation history and location data
     context = "\n".join([f"{'Human' if msg['role'] == 'user' else 'Assistant'}: {msg['content']}" for msg in conversation_history])
+    location_data = "\n".join([f"{name}: {link}" for name, link in locations.items()])
     
     prompt = f"""You are a friendly chatbot of the University of Energy and Natural Resources (UENR), and I like to keep our conversations personal and engaging as if I'm the Vice Chancellor. 🎓 "
         "I can assist you with information on admissions 📝, financial aid 💰, academic programs 📚, campus life 🏫, registration procedures 🖊️, and various student services 🛠️. "
         "I can also provide the locations of different blocks on campus 🏢 and information about student clubs 🏆 with Google Map links 🌍. "
         "Feel free to ask me anything about UENR! 😊.
+        When providing information about campus locations, use ONLY the following verified data:
+    {location_data}
+
+    If a location is mentioned that's not in this list, say you don't have information about that specific location.
+    Do not invent or assume any location information that is not provided in the above list.
+
 
     Here are some guidelines for your responses:
     1. Always maintain a friendly and professional tone.
@@ -112,7 +117,8 @@ def get_gemini_response(message, conversation_history):
     7. When asked for a link on UENR, refer the user to the official UENR website.
     8. Be encouraging and positive about the benefits of studying at UENR, but remain factual and avoid exaggeration.
     9. You can provide information on admissions, financial aid, academic programs, campus life, registration procedures, and various student services.
-    10. You also have access to information about campus locations and student clubs, which you can share when relevant.
+    10. You also have access to information about campus locations and student clubs, which you can share when relevant.don't make mistake on cmapus loacation, be sure of what you will say
+    11. when asked the Location of SH, they are referring to a classroom, not Student's Hostel
     
     Conversation History:
     {context}
