@@ -49,7 +49,20 @@ document.addEventListener('DOMContentLoaded', function() {
         })
         .then(response => response.json())
         .then(data => {
-            callback(data.response);
+            // Check if the response contains a link
+            if (data.response.includes("http")) {
+                // Extract the link and text
+                const linkMatch = data.response.match(/(.*)(https?:\/\/[^\s]+)(.*)$/);
+                if (linkMatch) {
+                    const [, beforeLink, link, afterLink] = linkMatch;
+                    const formattedResponse = `${beforeLink}<a href="${link}" target="_blank">${link}</a>${afterLink}`;
+                    callback(formattedResponse);
+                } else {
+                    callback(data.response);
+                }
+            } else {
+                callback(data.response);
+            }
         })
         .catch(error => {
             console.error('Error:', error);
@@ -92,9 +105,16 @@ document.addEventListener('DOMContentLoaded', function() {
     
         function typeWriter() {
             if (index < message.length) {
-                textElement.innerHTML += message.charAt(index);
-                index++;
-                setTimeout(typeWriter, speed); // Adjust typing speed here (milliseconds per character)
+                if (message.substr(index, 4) === '<a h') {
+                    // If we encounter a link, add the whole link at once
+                    const closingTagIndex = message.indexOf('</a>', index) + 4;
+                    textElement.innerHTML += message.substring(index, closingTagIndex);
+                    index = closingTagIndex;
+                } else {
+                    textElement.innerHTML += message.charAt(index);
+                    index++;
+                }
+                setTimeout(typeWriter, speed);
                 chatBox.scrollTop = chatBox.scrollHeight;
             }
         }
@@ -145,9 +165,7 @@ document.addEventListener('DOMContentLoaded', function() {
     
         showNextSlide();
     }
-});    
-
-
+});
 
 
 
