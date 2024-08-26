@@ -1,29 +1,20 @@
 from flask import Flask, request, jsonify, render_template, session
-from flask_cors import CORS
 import os
 from dotenv import load_dotenv
-import google.generativeai as genai
+import requests
 
 load_dotenv()
 
 app = Flask(__name__)
 app.secret_key = os.urandom(24)  # For session management
-CORS(app)
 
-# Set up Google API key and configure genai
-#os.environ["GOOGLE_API_KEY"] = 'AIzaSyBkpkOJMjbADblWa7jsRxJtFsNSG9QW3Pw'
-genai.configure(api_key=os.environ["GOOGLE_API_KEY"])
+OPENAI_API_KEY = os.getenv('OPENAI_API_KEY')
 
-# Initialize the Gemini model
-model = genai.GenerativeModel('gemini-pro')
-
-# Location and club data (as in your original code)
+# Location and club data
 locations = {
     "LT BLOCK": "https://maps.app.goo.gl/mNoeBD7Pjdbz2JYD9",
     "SAWMILL (LTS BLOCK)": "https://maps.app.goo.gl/TiSJmpEGnc5DRg737",
     "SYNDICATED HALL (SH)": "https://maps.app.goo.gl/aq66XMQnoRfUJpfe8",
-    "LTS BLOCK" :"https://maps.app.goo.gl/aq66XMQnoRfUJpfe8",
-    "SH": "https://maps.app.goo.gl/aq66XMQnoRfUJpfe8",
     "PAVILION": "https://maps.app.goo.gl/vVXLxgx36GMFbxjF9",
     "LIB FF": "https://maps.app.goo.gl/Xx6FJ5Vwzy47oVxE9",
     "APP LAB": "https://maps.app.goo.gl/MqmJnxgBgsiuKeM59",
@@ -72,62 +63,121 @@ def home():
 def handle_message():
     data = request.get_json()
     user_message = data.get('message')
-    
-    # Initialize or get the conversation history
     session['conversation'] = session.get('conversation', [])
     session['conversation'].append({"role": "user", "content": user_message})
     
-    response = get_gemini_response(user_message, session['conversation'])
-    
-    # Add the assistant's response to the conversation history
+    response = get_openai_response(user_message)
     session['conversation'].append({"role": "assistant", "content": response})
     
     flask_response = jsonify({'response': response})
     flask_response.headers['Cache-Control'] = 'max-age=86400, stale-while-revalidate=604800'
     return flask_response
 
-def get_gemini_response(message, conversation_history):
-    # First, check for exact or partial location matches
-    for loc_name, loc_link in locations.items():
-        if loc_name.lower() in message.lower() or any(word.lower() in message.lower() for word in loc_name.split()):
-            return f"The location of {loc_name} can be found here: {loc_link}"
+def get_openai_response(message):
+    headers = {
+        'Authorization': f'Bearer {OPENAI_API_KEY}',
+        'Content-Type': 'application/json',
+    }
     
-    # If no match, prepare the conversation history and location data
-    context = "\n".join([f"{'Human' if msg['role'] == 'user' else 'Assistant'}: {msg['content']}" for msg in conversation_history])
-    location_data = "\n".join([f"{name}: {link}" for name, link in locations.items()])
-    
-    prompt = f"""You are a friendly chatbot of the University of Energy and Natural Resources (UENR), and I like to keep our conversations personal and engaging as if I'm the Vice Chancellor. 🎓 "
+    prompt_context = (
+        "Hello! 👋 I'm the friendly chatbot of the University of Energy and Natural Resources (UENR), and I like to keep our conversations personal and engaging as if I'm the Vice Chancellor. 🎓 "
         "I can assist you with information on admissions 📝, financial aid 💰, academic programs 📚, campus life 🏫, registration procedures 🖊️, and various student services 🛠️. "
         "I can also provide the locations of different blocks on campus 🏢 and information about student clubs 🏆 with Google Map links 🌍. "
-        "Feel free to ask me anything about UENR! 😊.
-        When providing information about campus locations, use ONLY the following verified data:
-    {location_data}
-
-    If a location is mentioned that's not in this list, say you don't have information about that specific location.
-    Do not invent or assume any location information that is not provided in the above list.
+        "Feel free to ask me anything about UENR! 😊"
+    )
 
 
-    Here are some guidelines for your responses:
-    1. Always maintain a friendly and professional tone.
-    2. If you're not sure about something, say so politely and offer to help with related information you do know.
-    3. Provide concise answers for simple questions, but offer more detailed explanations for complex topics.
-    4. If a user expresses interest in a topic, offer to expand on it or suggest related areas they might find interesting.
-    5. Always prioritize information directly related to UENR and its benefits for education.
-    6. If a user asks about something not directly related to UENR, try to bridge the topic back to relevant UENR concepts if possible.
-    7. When asked for a link on UENR, refer the user to the official UENR website.
-    8. Be encouraging and positive about the benefits of studying at UENR, but remain factual and avoid exaggeration.
-    9. You can provide information on admissions, financial aid, academic programs, campus life, registration procedures, and various student services.
-    10. You also have access to information about campus locations and student clubs, which you can share when relevant.don't make mistake on cmapus loacation, be sure of what you will say
-    11. when asked the Location of SH, they are referring to a classroom, not Student's Hostel
+    messages = [{"role": "system", "content": prompt_context}] + session.get('conversation', [])
+
+    if any(loc_name.lower() in message.lower() for loc_name in locations):
+        for loc_name, loc_link in locations.items():
+            if loc_name.lower() in message.lower():
+                return f"The location of {loc_name} can be found here: {loc_link}"
     
-    Conversation History:
-    {context}
-    
-    Human: {message}
-    Assistant:"""
-    
-    response = model.generate_content(prompt)
-    return response.text
+    if any(club_name.lower() in message.lower() for club_name in clubs):
+        for club_name, club_info in clubs.items():
+            if club_name.lower() in message.lower():
+                return f"{club_info['description']} You can find more about them here: {club_info.get('x_handle', '')} {club_info.get('ig', '')} {club_info.get('fb', '')}"
+
+    data = {
+        "model": "gpt-3.5-turbo-0125",
+        "messages": messages,
+    }
+
+    try:
+        response = requests.post('https://api.openai.com/v1/chat/completions', headers=headers, json=data)
+        response.raise_for_status()
+        api_response = response.json()
+        print("OpenAI API response:", api_response)
+        return api_response['choices'][0]['message']['content']
+    except requests.exceptions.RequestException as e:
+        print("Error during OpenAI API request:", e)
+        return "Sorry, I am unable to respond at the moment. Please try again later."
 
 if __name__ == '__main__':
     app.run(debug=True)
+
+
+
+
+# # app.py
+# from flask import Flask, request, jsonify, render_template
+# import os
+# from dotenv import load_dotenv
+# import requests
+
+# load_dotenv()
+
+# app = Flask(__name__)
+
+# OPENAI_API_KEY = os.getenv('OPENAI_API_KEY')
+
+# @app.route('/')
+# def home():
+#     return render_template('index.html')
+
+# # @app.route('/api/message', methods=['POST'])
+# # def handle_message():
+# #     data = request.get_json()
+# #     user_message = data.get('message')
+# #     response = get_openai_response(user_message)
+# #     return jsonify({'response': response})
+
+# @app.route('/api/message', methods=['POST'])
+# def handle_message():
+#     data = request.get_json()
+#     user_message = data.get('message')
+#     response = get_openai_response(user_message)
+#     flask_response = jsonify({'response': response})
+#     flask_response.headers['Cache-Control'] = 'max-age=86400, stale-while-revalidate=604800'  # Set correct header on your Flask response
+#     return flask_response
+
+# def get_openai_response(message):
+#     headers = {
+#         'Authorization': f'Bearer {OPENAI_API_KEY}',
+#         'Content-Type': 'application/json',
+#     }
+#     prompt_context = (
+#         "I am a chatbot knowledgeable about the University of Energy and Natural Resources (UENR) and i make conversation personal as I'm the Vice Chancellor. "
+#         "I can provide information on admissions, financial aid, academic programs, campus life,with the neccessary link for student to read more "
+#         "registration procedures, and various student services. Ask me anything about UENR!"
+#     )
+#     data = {
+#         "model": "gpt-3.5-turbo-0125",
+#         "messages": [
+#             {"role": "system", "content": prompt_context},
+#             {"role": "user", "content": message}
+#         ],
+#     }
+#     response = requests.post('https://api.openai.com/v1/chat/completions', headers=headers, json=data)
+#     response.headers['Cache-Control'] = 'max-age=86400, stale-while-revalidate=604800'
+#     if response.status_code == 200:
+#         return response.json()['choices'][0]['message']['content']
+#     else:
+#         return "I'm sorry, I couldn't fetch a response. Please try again."
+    
+#     #response.headers['Cache-Control'] = 'max-age=86400, stale-while-revalidate=604800'
+
+
+# if __name__ == '__main__':
+#     app.run(debug=True)
