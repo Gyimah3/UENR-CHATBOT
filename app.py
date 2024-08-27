@@ -163,7 +163,7 @@ if __name__ == '__main__':
 #         "registration procedures, and various student services. Ask me anything about UENR!"
 #     )
 #     data = {
-#         "model": "gpt-3.5-turbo-0125",
+#         "model": "gpt-4o-2024-08-06",
 #         "messages": [
 #             {"role": "system", "content": prompt_context},
 #             {"role": "user", "content": message}
